@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The PC launcher's icon (local-assets/wario.ico, its 256x256 face). It is inset over Wario's
+     gold so the system's mask trims the background instead of biting into the artwork. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground>
+        <inset android:drawable="@mipmap/ic_launcher_art" android:inset="15%" />
+    </foreground>
+</adaptive-icon>

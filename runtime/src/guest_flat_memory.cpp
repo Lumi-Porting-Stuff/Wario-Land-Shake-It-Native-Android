@@ -33,6 +33,19 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#if defined(__ANDROID__) && __ANDROID_API__ < 30
+// The NDK only declares memfd_create from API 30, but the system call itself has been in Linux
+// since 3.17 - far behind every Android this port can run on - so calling it directly keeps the
+// minimum at Android 9 without giving up the one-backing-store, two-aliases mapping below.
+#include <linux/memfd.h>
+#include <sys/syscall.h>
+#ifndef MFD_CLOEXEC
+#define MFD_CLOEXEC 0x0001U
+#endif
+static int memfd_create(const char* name, unsigned int flags) {
+    return static_cast<int>(::syscall(__NR_memfd_create, name, flags));
+}
+#endif
 #endif
 
 namespace GuestFlat {

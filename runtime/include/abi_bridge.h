@@ -313,21 +313,41 @@ inline constexpr size_t kIndirectDispatchCacheEntries = 512;
 
 // Namespace-scope `inline thread_local`, not function-local `static thread_local`, to avoid a
 // thread-static init epoch check on every bctrl (same as g_currentCpuContext in ppc_runtime.h).
+//
+// The tables live on the heap with only a pointer each in thread-local storage, and the reason is
+// how thread-local storage is reached rather than anything about the tables.
+//
+// A shared library's thread-locals are addressed through a call into the dynamic linker unless the
+// library's whole TLS block fits the small static area the loader reserves for libraries opened
+// with dlopen - which is what the engine is, since the Android app loads it with
+// System.loadLibrary. These two tables were 16 KiB of a 24 KiB block, several times that area, so
+// every thread-local read in the engine paid a function call. As pointers they are 16 bytes, the
+// block fits, and the reads become an offset from the thread pointer. There is a build-time check
+// on the block's size (runtime/cmake/PublicProducts.cmake) because overrunning it again would show
+// up as the library failing to load rather than as anything legible.
 struct IndirectResolvedDispatchMemoEntry {
     bool valid;
     uint32_t address;
     const TranslatedFunctionInfo* info;
 };
-inline thread_local IndirectResolvedDispatchMemoEntry
-    g_indirectResolvedDispatchMemo[kIndirectDispatchCacheEntries]{};
+inline thread_local IndirectResolvedDispatchMemoEntry* g_indirectResolvedDispatchMemo = nullptr;
 
 struct IndirectRawDispatchMemoEntry {
     bool valid;
     uint32_t address;
     const RawDispatchRecord* record;
 };
-inline thread_local IndirectRawDispatchMemoEntry
-    g_indirectRawDispatchMemo[kIndirectDispatchCacheEntries]{};
+inline thread_local IndirectRawDispatchMemoEntry* g_indirectRawDispatchMemo = nullptr;
+
+// First indirect call on a thread. Out of line and cold: the hot path is one predictable test
+// against a pointer that is null exactly once per thread.
+//
+// The tables are never freed. A thread that executes guest code lives as long as the guest does -
+// the game thread and the audio HLE's thread are the only two - and freeing them would mean a
+// thread-local with a destructor, whose registration check lands back on the path this whole
+// arrangement exists to keep clear.
+MKW_PPC_NO_INLINE MKW_PPC_COLD IndirectResolvedDispatchMemoEntry* AllocateResolvedDispatchMemo();
+MKW_PPC_NO_INLINE MKW_PPC_COLD IndirectRawDispatchMemoEntry* AllocateRawDispatchMemo();
 
 class TranslatedFunctionRegistry {
 public:
@@ -342,7 +362,11 @@ public:
             return FindByAddressPtrSlow(address);
         }
 
-        auto& cached = g_indirectResolvedDispatchMemo[
+        auto* memo = g_indirectResolvedDispatchMemo;
+        if (memo == nullptr) [[unlikely]] {
+            memo = AllocateResolvedDispatchMemo();
+        }
+        auto& cached = memo[
             ((address >> 2) * 2654435761u) & (kIndirectDispatchCacheEntries - 1)];
         if (cached.valid && cached.address == address) {
             return cached.info;
@@ -362,7 +386,11 @@ public:
             return nullptr;
         }
 
-        auto& cached = g_indirectRawDispatchMemo[
+        auto* memo = g_indirectRawDispatchMemo;
+        if (memo == nullptr) [[unlikely]] {
+            memo = AllocateRawDispatchMemo();
+        }
+        auto& cached = memo[
             ((address >> 2) * 2654435761u) & (kIndirectDispatchCacheEntries - 1)];
         if (cached.valid && cached.address == address) {
             return cached.record;

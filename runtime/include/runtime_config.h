@@ -55,6 +55,10 @@ struct RuntimeUserConfig {
     std::optional<bool> spinningCoins;  // NSMBW: [video] spinning_coins, animated tiles
     std::optional<bool> frameGraph;     // NSMBW: [video] frame_graph, frame times under the FPS counter
     std::optional<bool> vsync;          // NSMBW: [video] vsync, presents wait for the display (Windows)
+    // [video] dynamic_resolution: renders fewer pixels while a scene is too heavy for the GPU,
+    // rather than dropping frames. Defaults on where the headroom is thin (Android) and off
+    // elsewhere; see dynamic_resolution.h.
+    std::optional<bool> dynamicResolution;
     std::optional<uint32_t> disabledPostProcessingPaths;
     std::optional<float> audioVolume;
     std::optional<float> audioMusicVolume;
@@ -591,6 +595,7 @@ inline RuntimeUserConfig ParseConfigDocument(const toml::value& document) {
     config.spinningCoins = FindConfigValue<bool>(document, "video", "spinning_coins");
     config.frameGraph = FindConfigValue<bool>(document, "video", "frame_graph");
     config.vsync = FindConfigValue<bool>(document, "video", "vsync");
+    config.dynamicResolution = FindConfigValue<bool>(document, "video", "dynamic_resolution");
     config.textureReplacements = FindConfigValue<bool>(document, "video", "texture_replacements");
     config.textureDumps = FindConfigValue<bool>(document, "video", "texture_dumps");
     config.fullWidescreen = FindConfigValue<bool>(document, "video", "full_widescreen");
@@ -829,6 +834,24 @@ inline bool SpinningCoins(bool fallback = true) {
 inline bool SetSpinningCoins(bool value) {
     Mutable().spinningCoins = value;
     return WriteSetting("video", "spinning_coins", value ? "true" : "false");
+}
+
+// On by default on a phone: at the resolutions a phone runs, the heavy scenes are where the frames
+// go, and there the choice is between fewer pixels and fewer frames. On desktop the player has the
+// headroom to keep every pixel, so it stays off unless asked for.
+inline bool DynamicResolutionEnabled(
+#if defined(__ANDROID__)
+    bool fallback = true
+#else
+    bool fallback = false
+#endif
+) {
+    return Get().dynamicResolution.value_or(fallback);
+}
+
+inline bool SetDynamicResolutionEnabled(bool value) {
+    Mutable().dynamicResolution = value;
+    return WriteSetting("video", "dynamic_resolution", value ? "true" : "false");
 }
 
 inline bool FrameGraph(bool fallback = false) {

@@ -20,8 +20,10 @@ extern "C" void WarioIntroButtons(uint32_t hold);
 #include "music_attenuation.h"
 #include "runtime_config.h"
 #include "display_settings.h"
+#include "dynamic_resolution.h"
 #include <dolphin/gx/GXAurora.h>
 #include "runtime_log.h"
+#include "platform/host_platform.h"
 #include "memory.h"
 #include "wii_remote_input.h"
 
@@ -126,6 +128,7 @@ int g_displayMode = [] {
 }();
 bool g_skipUnreadyPipelines = RuntimeConfigFile::SkipUnreadyPipelines(true);
 bool g_disableCopyFilter = RuntimeConfigFile::DisableCopyFilter(true);
+bool g_dynamicResolution = RuntimeConfigFile::DynamicResolutionEnabled();
 bool g_showFps = RuntimeConfigFile::ShowFps(false);  // off unless turned on
 bool g_frameGraph = RuntimeConfigFile::FrameGraph(false);
 std::atomic<bool> g_vsync{RuntimeConfigFile::VSync(true)};  // default on: no tearing
@@ -1183,6 +1186,22 @@ void DrawGraphicsSettings() {
         aurora_set_disable_copy_filter(g_disableCopyFilter);
         RuntimeConfigFile::SetDisableCopyFilter(g_disableCopyFilter);
     }
+    if (ImGui::Checkbox("Dynamic resolution", &g_dynamicResolution)) {
+        DynamicResolution::SetEnabled(g_dynamicResolution);
+        RuntimeConfigFile::SetDynamicResolutionEnabled(g_dynamicResolution);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Renders fewer pixels while a scene is too heavy for the graphics card to\n"
+                          "finish in time, instead of dropping frames, and gives them back as soon as\n"
+                          "it can. The resolution you chose above is the most it will ever render.");
+    }
+    if (g_dynamicResolution) {
+        const float active = DisplaySettings::DynamicScale();
+        if (active < 0.999f) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("(%.0f%% now)", active * 100.0f);
+        }
+    }
     if (ImGui::Checkbox("Skip draws while shaders compile", &g_skipUnreadyPipelines)) {
         aurora_set_skip_unready_pipelines(g_skipUnreadyPipelines);
         RuntimeConfigFile::SetSkipUnreadyPipelines(g_skipUnreadyPipelines);
@@ -1198,6 +1217,31 @@ void DrawGraphicsSettings() {
 constexpr int kFrameTimeCount = 180;
 float g_frameTimes[kFrameTimeCount] = {};
 int g_frameTimeNext = 0;
+
+// What the process is costing the machine, under the frame rate.
+//
+// Sampled a few times a second rather than every frame: the CPU share is a difference between two
+// readings, and over a single 16 ms frame that difference is mostly noise.
+void DrawProcessUsage() {
+    using Clock = std::chrono::steady_clock;
+    static Clock::time_point nextSample{};
+    static RuntimePlatform::ProcessUsage usage;
+
+    const auto now = Clock::now();
+    if (now >= nextSample) {
+        usage = RuntimePlatform::CurrentProcessUsage();
+        nextSample = now + std::chrono::milliseconds(500);
+    }
+    if (!usage.valid) {
+        return;
+    }
+    // A share above one core is normal and worth seeing: the game, the renderer and the audio mixer
+    // are separate threads, so this is "cores busy", not "how full the phone is".
+    ImGui::Text("CPU: %.0f%%", usage.cpuPercent);
+    if (usage.residentMegabytes > 0.0f) {
+        ImGui::Text("RAM: %.0f MB", usage.residentMegabytes);
+    }
+}
 
 void DrawFrameGraph() {
     float last = g_frameTimes[(g_frameTimeNext + kFrameTimeCount - 1) % kFrameTimeCount];
@@ -1262,6 +1306,12 @@ void DrawFpsOverlay() {
                                          ImGuiWindowFlags_NoNav |
                                          ImGuiWindowFlags_NoSavedSettings;
     if (ImGui::Begin("FPS Overlay", nullptr, kFlags)) {
+#if defined(__ANDROID__)
+        // ImGui draws at the render resolution, which on a phone is about what a desktop window
+        // holds but on a screen a fraction of the size. At 1:1 the counter is unreadable at arm's
+        // length.
+        ImGui::SetWindowFontScale(1.8f);
+#endif
         if (!g_showFps) {
         } else if (presentTiming.sampleCount == 0) {
             ImGui::TextUnformatted("FPS: --");
@@ -1277,6 +1327,7 @@ void DrawFpsOverlay() {
                 ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.25f, 1.0f), "Motion: %.1f",
                                    presentTiming.effectiveFramesPerSecond);
             }
+            DrawProcessUsage();
         }
         if (g_frameGraph) {
             DrawFrameGraph();
@@ -1790,6 +1841,7 @@ void InitializeRuntimeSettings() noexcept {
     g_displayMode = static_cast<int>(aurora_get_display_mode());
     aurora_set_disable_copy_filter(g_disableCopyFilter);
     aurora_set_skip_unready_pipelines(g_skipUnreadyPipelines);
+    DynamicResolution::SetEnabled(g_dynamicResolution);
     g_strapInputAccepted.store(false, std::memory_order_relaxed);
     g_startupDismissFrame.store(UINT64_MAX, std::memory_order_relaxed);
     g_bootShadersReady.store(false, std::memory_order_relaxed);

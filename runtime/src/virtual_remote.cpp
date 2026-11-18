@@ -18,9 +18,20 @@
 #include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_timer.h>
 
+namespace VirtualRemote {
+// Defined further down, where the on-screen remote's state lives: whether A, 2 or + is being held
+// on the touch overlay.
+bool TouchSkipPressed();
+} // namespace VirtualRemote
+
 // WARIO: botones para saltar la intro (Intro, Espacio, X, Escape; mando: abajo/derecha/Start). 0x0800 si hay alguno.
 extern "C" uint32_t WarioHostSkipButtons() {
     uint32_t mask = 0;
+    // A phone has neither of the two sources below, so without this the intro and the strap screen
+    // could not be skipped at all there.
+    if (VirtualRemote::TouchSkipPressed()) {
+        mask |= 0x0800u;
+    }
     int numKeys = 0;
     const bool* keys = SDL_GetKeyboardState(&numKeys);
     if (keys != nullptr) {
@@ -581,6 +592,13 @@ void AnnounceLocked(uint32_t chan, bool pad) {
 }
 
 } // namespace
+
+bool TouchSkipPressed() {
+    // Only the buttons being held, never the latch the sample path consumes: taking that here would
+    // steal the press from the game itself.
+    const uint32_t held = g_touchButtons.load(std::memory_order_relaxed);
+    return (held & (kTouchA | kTouchTwo | kTouchPlus)) != 0;
+}
 
 void SetTouchState(uint32_t touchButtons, bool shake, float tilt) {
     g_touchButtons.store(touchButtons, std::memory_order_relaxed);

@@ -881,8 +881,16 @@ struct DlIndexScanVisitor {
     static constexpr bool kHandlesDraw = true;
 
     static std::array<ScanLayoutCacheEntry, 8>& LayoutCache() {
-        static thread_local std::array<ScanLayoutCacheEntry, 8> cache;
-        return cache;
+        // On the heap with a pointer in thread-local storage, not 3.4 KiB of thread-local storage
+        // itself: the engine's whole TLS block has to stay inside the small static area the loader
+        // reserves for a dlopen'ed library, or every thread-local read in the engine goes through
+        // the dynamic linker instead of the thread pointer. See abi_bridge.h, which carries the
+        // same arrangement for the same reason.
+        static thread_local std::array<ScanLayoutCacheEntry, 8>* cache = nullptr;
+        if (cache == nullptr) [[unlikely]] {
+            cache = new std::array<ScanLayoutCacheEntry, 8>{};
+        }
+        return *cache;
     }
     static uint32_t NextLayoutGeneration() {
         static thread_local uint32_t counter = 0;

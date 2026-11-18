@@ -1037,6 +1037,9 @@ void shutdown() {
   tex_palette_conv::shutdown();
   texture_replacement::shutdown();
   gx::shutdown();
+  // After gx::shutdown, which drops the texture caches: their handles come back to the pool, and
+  // this is what then lets go of them.
+  shutdown_texture_pool();
 
   g_textureUploads.clear();
   g_cachedBindGroups.clear();
@@ -1136,6 +1139,10 @@ static bool begin_frame_impl(bool clearEfb, bool capacityResume = false) {
 
   g_drawCallCount = 0;
   g_mergedDrawCallCount = 0;
+  // Counted per frame rather than cumulatively: what matters is how many textures *this* frame had
+  // to build, since that is the part of it spent in the driver.
+  g_stats.texturesBuilt = 0;
+  g_stats.texturesRecycled = 0;
   if (clearEfb) {
     gx::begin_frame_interpolation();
   }

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The page being shown: a lighter strip with a gold edge down its left, as on PC. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/wario_side_hover" />
+        </shape>
+    </item>
+    <item android:right="-4dp">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/wario_gold" />
+        </shape>
+    </item>
+    <item android:left="4dp">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/wario_side_hover" />
+        </shape>
+    </item>
+</layer-list>

@@ -47,4 +47,12 @@ bool SurfaceWide();
 // Render height for a scale (480 lines per 1x).
 float LinesForScale(float renderScale);
 
+// A factor applied underneath the player's render resolution, 0.5 to 1, set by the dynamic
+// resolution controller while a scene is too heavy for the GPU to finish in time (see
+// dynamic_resolution.h). It is deliberately not part of Settings: it belongs to the moment, not to
+// what the player chose, so it is never saved and never shown as their setting. Takes effect at
+// the next frame boundary.
+void SetDynamicScale(float factor);
+float DynamicScale();
+
 } // namespace DisplaySettings

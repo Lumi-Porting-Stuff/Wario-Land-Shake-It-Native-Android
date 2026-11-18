@@ -3,7 +3,12 @@ include(FetchContent)
 # Don't build tests for third party dependencies
 set(BUILD_TESTING OFF CACHE INTERNAL "Build tests")
 set(SKIP_INSTALL_ALL ON)
-if (NOT DEFINED BUILD_SHARED_LIBS)
+if (ANDROID)
+  # An APK loads libmain.so and nothing beside it, so every dependency has to be linked into that
+  # one library. Left shared, libpng becomes a libpng16.so that is never packaged, and the loader
+  # refuses the engine with "library libpng16.so not found".
+  set(_USE_SHARED OFF)
+elseif (NOT DEFINED BUILD_SHARED_LIBS)
   set(_USE_SHARED ON)
 else ()
   set(_USE_SHARED OFF)
@@ -141,7 +146,8 @@ endif ()
 
 # fmt 11.1 drops its libc++ transitive includes but still calls malloc/free without <cstdlib>.
 # Force the missing header for fmt and its consumers until the pinned release is updated.
-if (MINGW AND TARGET fmt)
+# The NDK needs it for the same reason: its libc++ does not pull <cstdlib> in either.
+if ((MINGW OR ANDROID) AND TARGET fmt)
   target_compile_options(fmt PUBLIC
     $<$<COMPILE_LANGUAGE:CXX>:-include>
     $<$<COMPILE_LANGUAGE:CXX>:cstdlib>)

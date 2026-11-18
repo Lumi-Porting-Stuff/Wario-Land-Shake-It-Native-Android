@@ -30,6 +30,14 @@ typedef struct {
   uint32_t lastTextureUploadSize;
   uint32_t presentedFrameCount;
   uint32_t interpolatedFrameCount;
+  // Sampled textures the last frame had to build, and how many of those were served from the
+  // recycling pool instead of being created. Creating one is expensive out of all proportion to
+  // its size on some drivers - a Mali device asks a system service, over IPC, whether each image
+  // may be compressed - so a frame that builds many is a frame spent in the driver rather than on
+  // the game. Built high with recycled near it means the texture caches are missing; built high
+  // with recycled low means they are missing on textures the pool has never seen either.
+  uint32_t texturesBuilt;
+  uint32_t texturesRecycled;
 } AuroraStats;
 
 typedef struct {

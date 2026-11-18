@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The wording follows launcher-avalonia (its English half), so both launchers read alike. -->
+<resources>
+    <string name="app_name">WarioRecomp</string>
+    <string name="banner_subtitle">RWLE01 · native recompilation · by Santiago109 · in testing</string>
+    <!-- Down the side, over two lines, as the PC launcher sets it. -->
+    <string name="game_title_two_lines">WARIO LAND\nSHAKE IT!</string>
+    <string name="sidebar_hint">In game: the pause button opens the port menu.</string>
+
+    <!-- The one-line summary along the bottom, beside PLAY. -->
+    <string name="summary_full_intro">full intro</string>
+    <string name="summary_short_intro">skippable intro</string>
+
+    <!-- Tabs -->
+    <string name="tab_home">Home</string>
+    <string name="tab_display">Display</string>
+    <string name="tab_graphics">Graphics</string>
+    <string name="tab_audio">Audio</string>
+    <string name="tab_game">Game</string>
+    <string name="tab_controls">Controls</string>
+    <string name="tab_advanced">Advanced</string>
+    <string name="tab_data">Game data</string>
+    <string name="tab_log">Log</string>
+
+    <!-- Home -->
+    <string name="home_subtitle">Wario Land: Shake It! running natively, not emulated.</string>
+    <!-- %1$s is the folder the engine reads. -->
+    <string name="status_ready">Game found: %1$s</string>
+    <string name="status_missing">Your copy of the game is not here yet.</string>
+    <string name="play_button">PLAY</string>
+    <string name="home_go_to_data">This port contains nothing from the game. Game data explains how
+        to put your own copy on this phone.</string>
+    <string name="quick_settings">Quick settings</string>
+    <string name="in_game">In game</string>
+    <string name="in_game_help">The D-pad is on the left, 1, 2 and A on the right, SHAKE for
+        Wario\'s shake, and + and − at the top. Tilting the phone tilts the Wii Remote and shaking
+        the phone shakes it. A Bluetooth gamepad works too.</string>
+
+    <!-- Display -->
+    <string name="display_subtitle">How the game fills your screen.</string>
+    <string name="aspect_ratio">Aspect ratio</string>
+    <string name="aspect_4_3">4:3 (original)</string>
+    <string name="aspect_16_9">16:9</string>
+    <string name="aspect_fill">Fill the screen</string>
+    <string name="aspect_cinematic">Cinematic 2.39:1</string>
+    <string name="aspect_help">16:9 and Fill make the game itself draw wider, so there is more of
+        the level at the sides.</string>
+    <string name="full_widescreen">★ True 16:9 in levels (experimental)</string>
+    <string name="full_widescreen_help">New in this port: removes the side panels the game frames
+        its 4:3 play area with, so the level fills the screen — something the original never did.
+        Only with 16:9, Fill or Cinematic, and it applies when the game starts.</string>
+    <string name="overlay">Overlay</string>
+    <string name="show_fps">Show FPS</string>
+    <string name="frame_graph">Frame time graph</string>
+    <string name="frame_graph_help">Useful to spot stutter.</string>
+    <string name="vsync">Vertical sync (VSync)</string>
+    <string name="vsync_help_android">Phones compose every frame anyway, so turning this off rarely
+        changes what you see.</string>
+
+    <!-- Graphics -->
+    <string name="graphics_subtitle">Resolution and renderer.</string>
+    <string name="resolution">Resolution</string>
+    <string name="render_resolution">Render resolution</string>
+    <string name="res_480">480p (original)</string>
+    <string name="res_720">720p</string>
+    <string name="res_1080">1080p</string>
+    <string name="res_1440">1440p</string>
+    <string name="render_resolution_help_android">The game is drawn at this height and then scaled
+        to the screen. Above 1080p a phone GPU usually costs more frames than it gains looks.</string>
+    <string name="dynamic_resolution">Dynamic resolution</string>
+    <string name="dynamic_resolution_help">Draws fewer pixels while a scene is too heavy for the
+        GPU — a boss shaking the screen, a room full of effects — instead of dropping to 30 frames,
+        and gives them back as soon as the scene lets up. The resolution above stays the most it
+        will ever draw.</string>
+    <string name="renderer">Renderer</string>
+    <string name="renderer_vulkan_only">Vulkan, always: it is the only graphics API this engine has
+        on Android.</string>
+    <string name="gpu_compat">GPU compatibility</string>
+    <string name="gpu_compat_help">Works around drivers that draw the game wrong. Automatic turns it
+        on for the GPUs known to need it, which is most phone GPUs.</string>
+    <string name="frame_interpolation">Frame interpolation</string>
+    <string name="frame_interpolation_help_android">Experimental. The game still runs at 60; the
+        frames between are made up. Each one draws the scene again, so on a phone this costs
+        battery and heat for little gain.</string>
+    <string name="automatic">Automatic</string>
+    <string name="on">On</string>
+    <string name="off">Off</string>
+
+    <!-- Audio -->
+    <string name="audio_subtitle">Volume and mixing.</string>
+    <string name="volume">Volume</string>
+    <string name="muted">Muted</string>
+    <string name="performance">Performance</string>
+    <string name="mix_worker">Mix on its own thread</string>
+    <string name="mix_worker_help">Keeps the sound steady when the game thread is busy. Turn it off
+        only to test whether it is causing a problem.</string>
+
+    <!-- Game -->
+    <string name="game_subtitle">The game\'s own options.</string>
+    <string name="language">Language</string>
+    <string name="game_language">Game language</string>
+    <string name="game_language_help">Automatic follows the phone. The disc carries English, Spanish
+        and French.</string>
+    <string name="intro">Intro</string>
+    <string name="intro_full">Full (skip with A, 2 or +)</string>
+    <string name="intro_short">Short (1 frame)</string>
+
+    <!-- Controls -->
+    <string name="controls_subtitle">The game only reads a Wii Remote held sideways, so that is what
+        it is given.</string>
+    <string name="on_screen">On-screen controls</string>
+    <string name="controls_help">D-pad on the left; 1, 2 and A on the right; SHAKE for Wario\'s
+        shake; + and − at the top. Touches that miss every button reach the game\'s own menus.</string>
+    <string name="phone_motion">Phone motion</string>
+    <string name="motion_enabled">Tilt and shake the phone</string>
+    <string name="motion_enabled_help">The phone becomes the Wii Remote: turn it to tilt, shake it
+        to shake. The on-screen buttons keep working at the same time.</string>
+    <string name="motion_invert_roll">Invert the tilt direction</string>
+    <string name="gamepad">Bluetooth gamepad</string>
+    <string name="left_stick_tilt">Tilt with the left stick</string>
+    <string name="left_stick_tilt_help">Aims up to 85° in the direction you push, as on PC. L1 and
+        R1 tilt by 30°, L2 and R2 shake.</string>
+    <string name="rumble">Rumble</string>
+
+    <!-- Advanced -->
+    <string name="advanced_subtitle">Rarely needed, and easy to get wrong.</string>
+    <string name="textures">Texture packs</string>
+    <string name="texture_replacements">Load replacement textures</string>
+    <string name="texture_replacements_help">Reads higher-resolution textures from the Textures
+        folder in the app\'s data folder.</string>
+    <string name="texture_dumps">Dump the game\'s textures</string>
+    <string name="texture_dumps_help">Writes every texture the game uses, to make a pack from. It
+        fills storage quickly; leave it off while playing.</string>
+    <string name="compatibility">Compatibility</string>
+    <string name="skip_unready_pipelines">Skip shaders that are not compiled yet</string>
+    <string name="skip_unready_pipelines_help">Keeps the game moving instead of stopping for each
+        new shader; something may be missing for a frame or two. On a phone this is worth having.</string>
+    <string name="disable_copy_filter">Disable the copy filter</string>
+    <string name="disable_copy_filter_help">The Wii blurred the image slightly as it scanned it out.
+        Off is sharper but not what the game looked like.</string>
+    <string name="folders">Folders</string>
+    <!-- %1$s is the app's own data folder. -->
+    <string name="data_folder_is">Settings, saves, caches and logs: %1$s</string>
+
+    <!-- Game data -->
+    <string name="data_subtitle">Your own copy of the disc. Nothing from the game ships with this
+        port.</string>
+    <string name="status">Status</string>
+    <string name="where_it_goes">Where it goes</string>
+    <!-- %1$s is the shared folder the engine reads. -->
+    <string name="data_where">%1$s</string>
+    <string name="data_needs_access">Reading that folder needs all-files access, because the engine
+        opens the disc as a path rather than through the document picker. It is only ever used to
+        read the game.</string>
+    <string name="grant_access">Grant all-files access…</string>
+    <string name="extracting">Extracting the disc</string>
+    <string name="data_extract_help">You need Wario Land: Shake It! (USA, RWLE01, revision 0).
+        Extract it once with Dolphin on a PC: right-click the game, Properties, the Filesystem tab,
+        then right-click the disc at the top and choose Extract Entire Disc. Copy the resulting
+        folder to the path above — about 3.5 GB.</string>
+    <string name="importing">Importing instead</string>
+    <!-- %1$s is the app's private game folder. -->
+    <string name="data_import_help">If you would rather pick the folder here, it is copied into
+        %1$s, which needs room for a second copy.</string>
+    <string name="import_button">Import the game from a folder…</string>
+    <string name="import_counting">Measuring the folder…</string>
+    <!-- %1$.0f megabytes copied, %2$.0f in total, %3$s the file being copied. -->
+    <string name="import_progress">%1$.0f of %2$.0f MB — %3$s</string>
+
+    <!-- Log -->
+    <string name="log_subtitle">What the engine wrote on the last run.</string>
+    <string name="log_none">No log yet: the game has not run on this phone.</string>
+    <string name="log_truncated">— showing only the end of the log —</string>
+    <!-- %1$s is the reason the file could not be read. -->
+    <string name="log_unreadable">The log could not be read: %1$s</string>
+
+    <!-- Errors -->
+    <!-- %1$s is the reason the file could not be written. -->
+    <string name="error_saving_settings">The settings could not be saved: %1$s</string>
+    <string name="error_saving_folder">The game folder could not be saved: %1$s</string>
+    <string name="error_no_access_screen">This phone has no all-files access screen. Copy the disc
+        into the app\'s own folder instead.</string>
+</resources>

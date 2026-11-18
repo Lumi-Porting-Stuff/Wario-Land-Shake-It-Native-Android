@@ -1,4 +1,4 @@
-// android_bridge.cpp - JNI entry points the Android app (com.wither.nsmbw) calls into libmain.so.
+// android_bridge.cpp - JNI entry points the Android app (com.santiago109.wariorecomp) calls into libmain.so.
 #if defined(__ANDROID__)
 
 #include "display_settings.h"
@@ -47,11 +47,30 @@ bool RestartGame() {
 
 } // namespace AndroidBridge
 
+// Defined in aurora's window layer. Declared rather than included because that header is internal
+// to aurora; both ends live in libmain.so, so the signature is all the linker needs.
+namespace aurora::window {
+void set_surface_ready(bool ready) noexcept;
+} // namespace aurora::window
+
 extern "C" {
+
+// GameActivity.nativeSurfaceReady: whether there is a surface to draw on.
+//
+// aurora refuses to prepare or present a frame until this is true (window.cpp: is_presentable),
+// and on Android it starts out false. Upstream aurora expects a patched SDLSurface.java to report
+// it; this port builds SDL from its own sources, so the app watches the surface itself through
+// SurfaceHolder and reports it here. Without this the engine runs perfectly well and draws
+// nothing: every frame is dropped and the screen stays black.
+JNIEXPORT void JNICALL Java_com_santiago109_wariorecomp_GameActivity_nativeSurfaceReady(
+    JNIEnv*, jclass, jboolean ready)
+{
+    aurora::window::set_surface_ready(ready == JNI_TRUE);
+}
 
 // GameActivity.nativeSetTouchState: the on-screen remote (VirtualRemote::TouchButton bits) and the
 // phone's motion (shake, tilt -1..1) for player 1. Called from the UI thread on every change.
-JNIEXPORT void JNICALL Java_com_wither_nsmbw_GameActivity_nativeSetTouchState(
+JNIEXPORT void JNICALL Java_com_santiago109_wariorecomp_GameActivity_nativeSetTouchState(
     JNIEnv*, jclass, jint buttons, jboolean shake, jfloat tilt)
 {
     VirtualRemote::SetTouchState(static_cast<uint32_t>(buttons), shake == JNI_TRUE, tilt);
@@ -60,7 +79,7 @@ JNIEXPORT void JNICALL Java_com_wither_nsmbw_GameActivity_nativeSetTouchState(
 // GameActivity.nativeApplyDisplaySettings: the Display menu. The aspect (0 original 4:3, 1 16:9,
 // 2 fill the screen) and the render scale (480 lines per 1x) apply at the next frame; 4:3 versus a
 // widescreen mode only at the next start, since the game reads it at boot.
-JNIEXPORT void JNICALL Java_com_wither_nsmbw_GameActivity_nativeApplyDisplaySettings(
+JNIEXPORT void JNICALL Java_com_santiago109_wariorecomp_GameActivity_nativeApplyDisplaySettings(
     JNIEnv*, jclass, jint aspect, jfloat renderScale, jboolean showFps)
 {
     // Through the settings overlay, so the game's own settings window shows the same choice. A scale
@@ -72,7 +91,7 @@ JNIEXPORT void JNICALL Java_com_wither_nsmbw_GameActivity_nativeApplyDisplaySett
 
 // GameActivity.nativeGraphicsInfo: the GPU the game is drawing with and whether the GPU
 // compatibility fixes are on, as "<name>\n<1|0>"; empty until the renderer has started.
-JNIEXPORT jstring JNICALL Java_com_wither_nsmbw_GameActivity_nativeGraphicsInfo(JNIEnv* env, jclass)
+JNIEXPORT jstring JNICALL Java_com_santiago109_wariorecomp_GameActivity_nativeGraphicsInfo(JNIEnv* env, jclass)
 {
     const std::string name = GraphicsInfo::Name();
     if (name.empty()) {
@@ -83,7 +102,7 @@ JNIEXPORT jstring JNICALL Java_com_wither_nsmbw_GameActivity_nativeGraphicsInfo(
 }
 
 // GameActivity.nativeSetDeviceName: what this phone is called in room lists.
-JNIEXPORT void JNICALL Java_com_wither_nsmbw_GameActivity_nativeSetDeviceName(JNIEnv* env, jclass, jstring name)
+JNIEXPORT void JNICALL Java_com_santiago109_wariorecomp_GameActivity_nativeSetDeviceName(JNIEnv* env, jclass, jstring name)
 {
     if (name == nullptr) {
         return;
@@ -96,26 +115,26 @@ JNIEXPORT void JNICALL Java_com_wither_nsmbw_GameActivity_nativeSetDeviceName(JN
 }
 
 // GameActivity.nativeSessionActive: whether this run is a LAN session (the menu offers to leave it).
-JNIEXPORT jboolean JNICALL Java_com_wither_nsmbw_GameActivity_nativeSessionActive(JNIEnv*, jclass)
+JNIEXPORT jboolean JNICALL Java_com_santiago109_wariorecomp_GameActivity_nativeSessionActive(JNIEnv*, jclass)
 {
     return NetplaySession::Active() ? JNI_TRUE : JNI_FALSE;
 }
 
 // GameActivity.nativePrepareToLeave: the menu's "Leave LAN game", before the app restarts the game.
-JNIEXPORT void JNICALL Java_com_wither_nsmbw_GameActivity_nativePrepareToLeave(JNIEnv*, jclass)
+JNIEXPORT void JNICALL Java_com_santiago109_wariorecomp_GameActivity_nativePrepareToLeave(JNIEnv*, jclass)
 {
     NetplayStart::PrepareToLeave();
 }
 
 // GameActivity.nativeTap: a tap on the game's menus, as fractions of the screen (netplay_ui.h).
-JNIEXPORT void JNICALL Java_com_wither_nsmbw_GameActivity_nativeTap(JNIEnv*, jclass, jfloat x, jfloat y)
+JNIEXPORT void JNICALL Java_com_santiago109_wariorecomp_GameActivity_nativeTap(JNIEnv*, jclass, jfloat x, jfloat y)
 {
     NetplayUi::Tap(x, y);
 }
 
 // GameActivity.nativeTakeSettings: {render scale, show FPS 1/0, aspect, spinning coins 1/0, frame graph 1/0} when the game's settings
 // window changed them since the last call, else null; the app saves them for the next start.
-JNIEXPORT jfloatArray JNICALL Java_com_wither_nsmbw_GameActivity_nativeTakeSettings(JNIEnv* env, jclass)
+JNIEXPORT jfloatArray JNICALL Java_com_santiago109_wariorecomp_GameActivity_nativeTakeSettings(JNIEnv* env, jclass)
 {
     float scale = 1.0f;
     bool showFps = false;
@@ -133,7 +152,7 @@ JNIEXPORT jfloatArray JNICALL Java_com_wither_nsmbw_GameActivity_nativeTakeSetti
 }
 
 // GameActivity.nativeTapScreen: whether a menu that taps drive is up (the app hides its remote).
-JNIEXPORT jboolean JNICALL Java_com_wither_nsmbw_GameActivity_nativeTapScreen(JNIEnv*, jclass)
+JNIEXPORT jboolean JNICALL Java_com_santiago109_wariorecomp_GameActivity_nativeTapScreen(JNIEnv*, jclass)
 {
     return NetplayUi::TapScreenUp() ? JNI_TRUE : JNI_FALSE;
 }

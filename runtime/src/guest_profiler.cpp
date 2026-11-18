@@ -23,6 +23,13 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#elif defined(__ANDROID__) || defined(__linux__)
+#include <atomic>
+#include <csignal>
+#include <dlfcn.h>
+#include <sys/syscall.h>
+#include <ucontext.h>
+#include <unistd.h>
 #endif
 
 extern "C" {
@@ -34,7 +41,6 @@ extern const char* const kGuestMapSymbolNames[];
 namespace GuestProfiler {
 namespace {
 
-#ifdef _WIN32
 struct Entry {
     uintptr_t host;
     uint32_t guest;
@@ -47,9 +53,8 @@ const char* GuestName(uint32_t address) {
     return it != end && *it == address ? kGuestMapSymbolNames[it - begin] : "";
 }
 
-void Report(const std::unordered_map<uintptr_t, uint32_t>& samples, const std::vector<std::vector<uintptr_t>>& stacks,
-            uint32_t total) {
-    // Every translated function's host entry point, sorted, to find which one a sample falls in.
+// Every translated function's host entry point, sorted, to find which one a sample falls in.
+std::vector<Entry> BuildEntries() {
     std::vector<Entry> entries;
     for (const auto& [lo, hi] : {std::pair{0x80004000u, 0x80319180u}, std::pair{0x80BF691Cu, 0x80C5A648u}}) {
         for (uint32_t address = lo; address < hi; address += 4) {
@@ -60,6 +65,13 @@ void Report(const std::unordered_map<uintptr_t, uint32_t>& samples, const std::v
         }
     }
     std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) { return a.host < b.host; });
+    return entries;
+}
+
+#ifdef _WIN32
+void Report(const std::unordered_map<uintptr_t, uint32_t>& samples, const std::vector<std::vector<uintptr_t>>& stacks,
+            uint32_t total) {
+    std::vector<Entry> entries = BuildEntries();
     const auto exeBase = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(exeBase);
     const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(exeBase + dos->e_lfanew);
@@ -209,6 +221,134 @@ void Run(HANDLE thread, double startSeconds, double lengthSeconds) {
     }
     Report(samples, stacks, total);
 }
+#elif defined(__ANDROID__) || defined(__linux__)
+
+// The same profiler for phones and Linux, by a different mechanism.
+//
+// Nothing here may suspend the game thread the way the Windows path does: a thread stopped inside
+// malloc still holds its lock, and the sampler would deadlock the moment it allocated. Instead the
+// game thread samples itself. A helper sends it a signal, and the handler - which runs on the game
+// thread, between two of its own instructions - copies its own program counter out of the context
+// the kernel saved. The handler touches one atomic and nothing else, so it is safe wherever it
+// lands.
+//
+// Only the leaf address is taken, not the call stack: unwinding inside a signal handler is not
+// safe, and the leaf is what attributes time to a translated function anyway.
+std::atomic<uintptr_t> g_sampledPc{0};
+std::atomic<bool> g_sampleTaken{false};
+
+void SampleSignalHandler(int, siginfo_t*, void* contextRaw) {
+    const auto* context = static_cast<const ucontext_t*>(contextRaw);
+    uintptr_t pc = 0;
+#if defined(__aarch64__)
+    pc = static_cast<uintptr_t>(context->uc_mcontext.pc);
+#elif defined(__arm__)
+    pc = static_cast<uintptr_t>(context->uc_mcontext.arm_pc);
+#elif defined(__x86_64__)
+    pc = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_RIP]);
+#elif defined(__i386__)
+    pc = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_EIP]);
+#else
+    (void)context;
+#endif
+    g_sampledPc.store(pc, std::memory_order_relaxed);
+    g_sampleTaken.store(true, std::memory_order_release);
+}
+
+// A host address as a translated guest function, or as the library it belongs to.
+std::string DescribePc(uintptr_t pc, const std::vector<Entry>& entries) {
+    if (!entries.empty() && pc >= entries.front().host && pc <= entries.back().host) {
+        auto it = std::upper_bound(entries.begin(), entries.end(), pc,
+                                   [](uintptr_t value, const Entry& e) { return value < e.host; });
+        if (it != entries.begin()) {
+            --it;
+            char text[160];
+            std::snprintf(text, sizeof(text), "%08X %s", it->guest, GuestName(it->guest));
+            return text;
+        }
+    }
+    // Outside the translated range: name the library, and the symbol when one is exported.
+    Dl_info info{};
+    if (dladdr(reinterpret_cast<void*>(pc), &info) != 0 && info.dli_fname != nullptr) {
+        const char* slash = std::strrchr(info.dli_fname, '/');
+        const std::string library = std::string("[") + (slash != nullptr ? slash + 1 : info.dli_fname) + "]";
+        if (info.dli_sname != nullptr) {
+            return library + " " + info.dli_sname;
+        }
+        if (info.dli_fbase != nullptr) {
+            char text[48];
+            std::snprintf(text, sizeof(text), "+%llX",
+                          static_cast<unsigned long long>(pc - reinterpret_cast<uintptr_t>(info.dli_fbase)));
+            return library + text;
+        }
+        return library;
+    }
+    return "[unknown]";
+}
+
+void ReportPosix(const std::unordered_map<uintptr_t, uint32_t>& samples, uint32_t total) {
+    if (total == 0) {
+        RT_LOG(RT_TAG_RUNTIME) << "profile: no samples taken" << std::endl;
+        return;
+    }
+    const std::vector<Entry> entries = BuildEntries();
+    std::unordered_map<std::string, uint32_t> byName;
+    for (const auto& [pc, count] : samples) {
+        byName[DescribePc(pc, entries)] += count;
+    }
+    std::vector<std::pair<std::string, uint32_t>> sorted(byName.begin(), byName.end());
+    std::sort(sorted.begin(), sorted.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+    RT_LOGF(RT_TAG_RUNTIME, "profile: %u samples, %zu translated functions\n", total, entries.size());
+    for (size_t i = 0; i < sorted.size() && i < 60; ++i) {
+        RT_LOGF(RT_TAG_RUNTIME, "profile: %5.1f%%  %s\n", 100.0 * sorted[i].second / total, sorted[i].first.c_str());
+    }
+}
+
+void RunPosix(pid_t threadId, double startSeconds, double lengthSeconds) {
+    std::this_thread::sleep_for(std::chrono::duration<double>(startSeconds));
+
+    struct sigaction action {};
+    action.sa_sigaction = &SampleSignalHandler;
+    action.sa_flags = SA_SIGINFO | SA_RESTART;
+    sigemptyset(&action.sa_mask);
+    // SIGPROF is the profiling signal and is not used by the runtime for anything else.
+    if (sigaction(SIGPROF, &action, nullptr) != 0) {
+        RT_LOG(RT_TAG_RUNTIME) << "profile: could not install the sampling signal handler" << std::endl;
+        return;
+    }
+
+    std::unordered_map<uintptr_t, uint32_t> samples;
+    uint32_t total = 0;
+    const pid_t processId = getpid();
+    auto next = std::chrono::steady_clock::now();
+    const auto end = next + std::chrono::duration<double>(lengthSeconds);
+    while (std::chrono::steady_clock::now() < end) {
+        // About 1000 samples a second. Sleeping is too coarse, so the wait is a yield loop, as on
+        // the Windows path.
+        next += std::chrono::microseconds(1000);
+        while (std::chrono::steady_clock::now() < next) {
+            std::this_thread::yield();
+        }
+        g_sampleTaken.store(false, std::memory_order_relaxed);
+        if (syscall(SYS_tgkill, processId, threadId, SIGPROF) != 0) {
+            break;  // the game thread is gone
+        }
+        // The handler runs on the game thread, so this waits for it rather than for a lock. A
+        // bounded wait keeps a blocked thread from stopping the profiler altogether.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(2);
+        while (!g_sampleTaken.load(std::memory_order_acquire) &&
+               std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::yield();
+        }
+        if (g_sampleTaken.load(std::memory_order_acquire)) {
+            if (const uintptr_t pc = g_sampledPc.load(std::memory_order_relaxed); pc != 0) {
+                ++samples[pc];
+                ++total;
+            }
+        }
+    }
+    ReportPosix(samples, total);
+}
 #endif
 
 } // namespace
@@ -240,6 +380,24 @@ void OnFramePresented() {
     DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &thread,
                     THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, 0);
     std::thread(Run, thread, start, length).detach();
+#elif defined(__ANDROID__) || defined(__linux__)
+    static bool started = false;
+    if (started) {
+        return;
+    }
+    started = true;
+    // On a phone this arrives from `adb shell setprop debug.nsmbw.profile <start>:<length>`, which
+    // main.cpp turns into this variable before the game starts.
+    const char* value = std::getenv("NSMBW_PROFILE");
+    double start = 0;
+    double length = 0;
+    if (value == nullptr || std::sscanf(value, "%lf:%lf", &start, &length) != 2 || length <= 0) {
+        return;
+    }
+    // The thread that presents frames is the one worth sampling, and this runs on it.
+    const auto threadId = static_cast<pid_t>(syscall(SYS_gettid));
+    RT_LOGF(RT_TAG_RUNTIME, "profile: sampling the game thread for %.1f s, starting in %.1f s\n", length, start);
+    std::thread(RunPosix, threadId, start, length).detach();
 #endif
 }
 

@@ -484,3 +484,17 @@ void InitializePersistentCpuContext() {
         g_persistentCpu.gpr[13] = RuntimeConfig::SDA1_BASE;
     }
 }
+
+// The per-thread indirect-dispatch memo tables (abi_bridge.h). Out of line so the inline probe
+// that runs on every indirect guest call stays a pointer test and nothing more.
+MKW_PPC_NO_INLINE MKW_PPC_COLD IndirectResolvedDispatchMemoEntry* AllocateResolvedDispatchMemo() {
+    // Value-initialized: an entry counts only when its `valid` flag is set, and this is what sets
+    // every one of them to false.
+    g_indirectResolvedDispatchMemo = new IndirectResolvedDispatchMemoEntry[kIndirectDispatchCacheEntries]{};
+    return g_indirectResolvedDispatchMemo;
+}
+
+MKW_PPC_NO_INLINE MKW_PPC_COLD IndirectRawDispatchMemoEntry* AllocateRawDispatchMemo() {
+    g_indirectRawDispatchMemo = new IndirectRawDispatchMemoEntry[kIndirectDispatchCacheEntries]{};
+    return g_indirectRawDispatchMemo;
+}

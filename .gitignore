@@ -1,0 +1,25 @@
+# Anything derived from your own copy of the disc. This repository ships nothing from the game, and
+# these are the paths that would break that: game/main.dol is the Wii executable itself, and
+# generated/ is the C++ the translator writes from it.
+/game/
+/generated/
+
+# Build output.
+/build-android/
+/build-logs/
+/nb-win/
+/nb-linux/
+/Play/
+
+# Downloaded toolchains and dependencies, fetched by the build scripts.
+/toolchain/
+/fw/Dependencies/
+
+# .NET build output for the launcher and the translator.
+bin/
+obj/
+
+# Local tool and editor state.
+*.user
+.vs/
+.idea/

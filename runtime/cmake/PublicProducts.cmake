@@ -36,8 +36,18 @@ function(mkw_apply_common_compile_options target)
 endfunction()
 
 function(mkw_apply_translated_compile_options target)
+    # The translated game code is the bulk of a frame on a phone, and profiling it showed no single
+    # hot function to fix: the time is spread across the whole game, which is exactly the shape that
+    # a higher optimisation level helps. The floating-point behaviour does not change with it —
+    # MKW_TRANSLATED_PPC_FP_OPTIONS pins that with -fno-fast-math and -ffp-contract=off, and -O3
+    # enables neither. Desktops keep -O2, where the frame budget is not the problem and the build
+    # time and memory of -O3 over this much code are not worth paying.
+    set(optimisation -O2)
+    if(MKW_PLATFORM_ANDROID)
+        set(optimisation -O3)
+    endif()
     target_compile_options(${target} PRIVATE
-        -O2 ${MKW_TRANSLATED_PPC_FP_OPTIONS} -fno-slp-vectorize -w -pipe)
+        ${optimisation} ${MKW_TRANSLATED_PPC_FP_OPTIONS} -fno-slp-vectorize -w -pipe)
 endfunction()
 
 function(mkw_configure_object_target target)
@@ -329,6 +339,57 @@ else()
     add_executable(WiiCompiled "${MKW_BASE_PRODUCT_SOURCE}" ${MKW_BASE_REGISTRATION_SOURCES})
 endif()
 mkw_configure_product(WiiCompiled)
+if(MKW_PLATFORM_ANDROID)
+    # Bind calls inside libmain.so straight to their definitions instead of routing them through
+    # the PLT. The whole engine - runtime, aurora, SDL, Dawn - lives in this one library, so nearly
+    # every call it makes is to itself, and each one otherwise costs an indirect jump through a
+    # stub whose target the dynamic linker could have resolved at load time. A profile of the game
+    # thread put 1.9% of its time in those stubs alone.
+    #
+    # What this gives up is symbol interposition: another library can no longer replace a function
+    # this one defines and have this one's internal calls see the replacement. Nothing here wants
+    # that - the library is the program - and it stays exported for anyone calling in, which is
+    # what JNI and SDL_main need.
+    target_link_options(WiiCompiled PRIVATE "-Wl,-Bsymbolic-functions")
+
+    # Keeping the engine's thread-local block small is a performance measure, and the mechanism is
+    # worth stating because it is not the obvious one.
+    #
+    # The runtime reads thread-locals on essentially every translated guest call - the indirect
+    # dispatcher's memo tables, the current execution address - so how a thread-local is addressed
+    # is paid across the whole instruction stream. A shared library reaches its own through TLSDESC,
+    # and bionic resolves those two ways: tlsdesc_resolver_static returns a precomputed offset from
+    # the thread pointer, while tlsdesc_resolver_dynamic walks the thread's descriptor vector and
+    # may allocate. Which one a library gets depends on whether the loader could give it an offset
+    # in the static TLS area it reserves for libraries opened with dlopen - which the engine is,
+    # since the app loads it with System.loadLibrary. Fit that reserve and every thread-local read
+    # takes the cheap path; overrun it and they all take the expensive one, silently.
+    #
+    # Note for anyone tempted: -ftls-model=initial-exec does NOT work here, whatever the size.
+    # Bionic refuses IE relocations from a dlopen'ed library outright - "TLS symbol ... using IE
+    # access model" - and the library fails to load. Fitting the reserve is the whole lever.
+    #
+    # Android's reserve is 1664 bytes (bionic's SOLIB_TLS_SURPLUS), shared with anything else the
+    # process dlopens, so the budget below is deliberately under it. At the time of writing the
+    # engine uses about 680 bytes; the headroom is for a thread-local or two, not for another
+    # table. Anything larger belongs on the heap behind a thread-local pointer - see abi_bridge.h.
+    set(MKW_TLS_BUDGET_BYTES 1280)
+    find_program(MKW_READELF NAMES llvm-readelf readelf
+        HINTS "${ANDROID_TOOLCHAIN_ROOT}/bin" "${CMAKE_ANDROID_NDK}/toolchains/llvm/prebuilt/${ANDROID_HOST_TAG}/bin")
+    if(MKW_READELF)
+        add_custom_command(TARGET WiiCompiled POST_BUILD
+            COMMAND "${CMAKE_COMMAND}"
+                    "-DREADELF=${MKW_READELF}"
+                    "-DLIBRARY=$<TARGET_FILE:WiiCompiled>"
+                    "-DBUDGET=${MKW_TLS_BUDGET_BYTES}"
+                    -P "${CMAKE_CURRENT_LIST_DIR}/CheckTlsSize.cmake"
+            VERBATIM)
+    else()
+        message(WARNING
+            "llvm-readelf was not found, so the thread-local storage budget is unchecked. "
+            "If the app fails to load libmain.so at startup, that is the first thing to measure.")
+    endif()
+endif()
 if(MKW_PLATFORM_WINDOWS AND MKW_ENGINE_MODULE)
     set_target_properties(WiiCompiled PROPERTIES OUTPUT_NAME "${MKW_ENGINE_MODULE_NAME}" PREFIX "")
     target_compile_definitions(mkw_runtime_common PRIVATE MKW_ENGINE_MODULE)  # main.cpp exports SDL_main instead of main

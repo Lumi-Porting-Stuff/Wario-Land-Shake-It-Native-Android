@@ -10,6 +10,7 @@
 #include "guest_interrupt_context.h"
 #include "ppc_runtime.h"
 #include "aurora_events.h"
+#include "dynamic_resolution.h"
 #include "settings_overlay.h"
 extern "C" uint32_t WarioHostSkipButtons();
 extern "C" void WarioIntroButtons(uint32_t hold);
@@ -325,6 +326,14 @@ void SleepPreciselyUntil(Clock::time_point deadline, bool finishWithSpin = false
     while (Clock::now() < deadline) {
 #if defined(_WIN32)
         YieldProcessor();
+#elif defined(__aarch64__) || defined(__arm__)
+        // The same hint YieldProcessor gives on x86: it does not hand the core to another thread,
+        // it tells the processor this is a spin so it can drop power while waiting. Without it a
+        // phone burns a core flat out for the last fraction of every frame, and heat is what that
+        // buys - which on a phone comes straight back as a lower clock.
+        __asm__ __volatile__("yield" ::: "memory");
+#elif defined(__x86_64__) || defined(__i386__)
+        __builtin_ia32_pause();
 #endif
     }
 }
@@ -977,12 +986,34 @@ void VI_HLE_PresentFrame(bool presentedXfb, bool paceToRetrace) {
             if (frame > 20.0 && frame < 2000.0 && s_logged++ < 30) {
                 uint32_t sceneWord = 0;
                 Memory::TryRead32(0x80428730u, sceneWord);
+                // Textures built and recycled come last because they answer a question the timings
+                // only raise: a large gx share is either the game drawing a great deal or the
+                // engine building textures, and creating one costs a trip through the graphics
+                // driver that has nothing to do with how big it is.
+                const AuroraStats* stats = aurora_get_stats();
                 RT_LOGF(RT_TAG_VI,
                         "slow frame %.1f ms (scene 0x%03X): game %.2f (gx %.2f, disc %.2f in %u reads), present %.2f, "
-                        "end_frame %.2f, pace %.2f\n",
+                        "end_frame %.2f, pace %.2f, textures %u built (%u recycled)\n",
                         frame, sceneWord & 0xFFFFu, ms(presentStart - s_lastEnd), gxMs, dvdMs, frameReads,
                         ms(endFrameStart - presentStart),
-                        ms(paceStart - endFrameStart), ms(now - paceStart));
+                        ms(paceStart - endFrameStart), ms(now - paceStart),
+                        stats != nullptr ? stats->texturesBuilt : 0u,
+                        stats != nullptr ? stats->texturesRecycled : 0u);
+            }
+            // The same three numbers the line above reports, handed to the dynamic resolution
+            // controller every frame rather than only on the slow ones: it needs the frames that
+            // arrived on time just as much, since those are what tell it there is room to put the
+            // resolution back. Only paced frames carry a budget to be measured against; boot and
+            // black VI frames present as soon as they are ready and would read as free headroom.
+            if (paceToRetrace) {
+                double budgetMs = 0.0;
+                {
+                    std::lock_guard<std::mutex> lock(g_viMutex);
+                    EnsureInitializedLocked();
+                    budgetMs = std::chrono::duration<double, std::milli>(ActiveIntervalLocked()).count();
+                }
+                DynamicResolution::OnFramePresented(frame, ms(paceStart - endFrameStart),
+                                                    ms(now - paceStart), budgetMs);
             }
         }
         s_lastEnd = now;

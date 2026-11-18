@@ -1,0 +1,14 @@
+# Produced by tools\build-wario-android.ps1, not kept in the repository.
+local.properties
+.gradle/
+build/
+app/build/
+
+# The engine and the files it reads: built from the user's own disc, and far too large to commit.
+app/src/main/jniLibs/
+app/src/main/assets/runtime/
+
+# Copied in from local-assets by tools\build-wario-android.ps1, so the PC launcher and this app
+# always show the same artwork and icon from one source.
+app/src/main/assets/launcher_banner.jpg
+app/src/main/res/mipmap-xxxhdpi/ic_launcher_art.png

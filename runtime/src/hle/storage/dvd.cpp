@@ -179,6 +179,88 @@ static void WarioShortIntro(const fs::path& path, uint64_t offset, std::vector<u
     if (!logged) { logged = true; RT_LOG(RT_TAG_DVD) << "intro: " << name.string() << " acortada a 1 cuadro (short_intro.txt)" << std::endl; }
 }
 
+// A handful of disc files kept open between reads.
+//
+// DvdReadContract::ReadExact opens the file, seeks to its end for the size, seeks back and closes
+// again on every single read. On Windows that is cheap and the prefetch above means it rarely runs
+// at all; on Android the disc sits on /sdcard behind FUSE, where the open and the size query are
+// each a round trip to another process. Streaming a video off the disc that way costs 3-12 ms per
+// read, which is most of a frame. Holding the file open and remembering its size removes both.
+struct OpenDiscFile {
+    std::ifstream stream;
+    uint64_t size = 0;
+    uint64_t lastUse = 0;
+};
+std::mutex g_openFilesMutex;
+std::unordered_map<fs::path::string_type, OpenDiscFile> g_openFiles;
+uint64_t g_openFileClock = 0;
+// The game streams from very few files at a time; this is about descriptors, not about caching.
+constexpr size_t kMaxOpenDiscFiles = 8;
+
+bool ReadOpenDiscFile(const fs::path& path, uint64_t offset, uint32_t length,
+                      std::vector<uint8_t>& destination, DvdReadContract::HostReadFailure& failure) {
+    failure = DvdReadContract::HostReadFailure::None;
+    std::lock_guard lock(g_openFilesMutex);
+
+    auto it = g_openFiles.find(path.native());
+    if (it == g_openFiles.end()) {
+        if (g_openFiles.size() >= kMaxOpenDiscFiles) {
+            // Drop the least recently used rather than growing without bound.
+            auto oldest = g_openFiles.begin();
+            for (auto candidate = g_openFiles.begin(); candidate != g_openFiles.end(); ++candidate) {
+                if (candidate->second.lastUse < oldest->second.lastUse) {
+                    oldest = candidate;
+                }
+            }
+            g_openFiles.erase(oldest);
+        }
+        OpenDiscFile opened;
+        opened.stream.open(path, std::ios::binary);
+        if (!opened.stream.is_open()) {
+            failure = DvdReadContract::HostReadFailure::MissingFile;
+            return false;
+        }
+        std::error_code ec;
+        const auto size = fs::file_size(path, ec);
+        if (ec) {
+            failure = DvdReadContract::HostReadFailure::MissingFile;
+            return false;
+        }
+        opened.size = static_cast<uint64_t>(size);
+        it = g_openFiles.emplace(path.native(), std::move(opened)).first;
+    }
+
+    OpenDiscFile& file = it->second;
+    file.lastUse = ++g_openFileClock;
+    if (offset >= file.size) {
+        failure = DvdReadContract::HostReadFailure::BadOffset;
+        return false;
+    }
+    if (static_cast<uint64_t>(length) > file.size - offset) {
+        failure = DvdReadContract::HostReadFailure::ShortRead;
+        return false;
+    }
+    if (length == 0) {
+        destination.clear();
+        return true;
+    }
+
+    // A stream that hit EOF on an earlier read refuses to seek until it is cleared.
+    file.stream.clear();
+    file.stream.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
+    if (!file.stream) {
+        failure = DvdReadContract::HostReadFailure::BadOffset;
+        return false;
+    }
+    destination.resize(length);
+    file.stream.read(reinterpret_cast<char*>(destination.data()), static_cast<std::streamsize>(length));
+    if (file.stream.gcount() != static_cast<std::streamsize>(length)) {
+        failure = DvdReadContract::HostReadFailure::ShortRead;
+        return false;
+    }
+    return true;
+}
+
 bool ReadHostFile(const fs::path& path, uint64_t offset, uint32_t length, std::vector<uint8_t>& destination,
                   DvdReadContract::HostReadFailure& failure) {
     const auto start = std::chrono::steady_clock::now();
@@ -195,7 +277,7 @@ bool ReadHostFile(const fs::path& path, uint64_t offset, uint32_t length, std::v
             ok = true;
         }
     } else {
-        ok = DvdReadContract::ReadExact(path, offset, length, destination, failure);
+        ok = ReadOpenDiscFile(path, offset, length, destination, failure);
     }
     if (ok) WarioShortIntro(path, offset, destination);
     g_dvdReadNanos.fetch_add(static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(

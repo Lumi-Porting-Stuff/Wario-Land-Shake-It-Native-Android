@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- The engine needs a working Vulkan 1.1 driver; there is no software fallback. Declaring it
+         keeps the app off phones that cannot run it rather than letting them install and fail at
+         device creation. -->
+    <uses-feature android:name="android.hardware.vulkan.version" android:version="0x401000"
+        android:required="true" />
+    <uses-feature android:name="android.hardware.vulkan.level" android:version="1"
+        android:required="false" />
+    <!-- Tilt and shake can come from the phone itself, but the on-screen controls work without it. -->
+    <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="false" />
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
+    <!-- LAN play only. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- The recompiled game code opens the disc with ordinary file calls, exactly as the Windows
+         build does, so the folder has to be readable as a real path. This is what lets it live
+         anywhere the user likes on shared storage, such as /sdcard/WarioRecomp/game, instead of
+         only inside the app's own Android/data folder. It is used for nothing else: the disc is
+         only ever read, and this app's saves and settings stay in its private folder. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+    <!-- Android 9 and 10 have no all-files access; there the legacy permission does the same job. -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
+
+    <application
+        android:allowBackup="false"
+        android:hardwareAccelerated="true"
+        android:requestLegacyExternalStorage="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.WarioRecomp">
+
+        <!-- Lets simpleperf profile the release build over adb, which is the only build whose
+             frame times mean anything. It does not make the app debuggable: no run-as, no reading
+             its data, nothing the player's own device does not already allow. Without it a drop in
+             frame rate can only be guessed at from the engine's own log. -->
+        <profileable android:shell="true" />
+
+        <!-- The launcher: the PC launcher's pages, and the way into the game. -->
+        <activity
+            android:name=".LauncherActivity"
+            android:exported="true"
+            android:screenOrientation="fullSensor"
+            android:theme="@style/Theme.WarioRecomp">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- SDL drives this one. singleInstance matches SDL's own Android project: the game owns the
+             process, and restartForSession (netplay) relies on the process being replaced. -->
+        <activity
+            android:name=".GameActivity"
+            android:alwaysRetainTaskState="true"
+            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|navigation"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:preferMinimalPostProcessing="true"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.WarioRecomp.Game" />
+    </application>
+
+</manifest>

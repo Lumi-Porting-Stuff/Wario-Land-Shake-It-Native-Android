@@ -59,6 +59,7 @@
 #include <sys/system_properties.h>
 #endif
 
+#include "platform/host_platform.h"
 #include "netplay_ui.h"
 #include "netplay_start.h"
 #include "netplay_session.h"
@@ -1411,6 +1412,7 @@ int RuntimeMain(int argc, char** argv) {
                                             std::pair{"debug.nsmbw.tapscript", "NSMBW_TAP_SCRIPT"},
                                             std::pair{"debug.nsmbw.warp", "NSMBW_WARP"},
                                             std::pair{"debug.nsmbw.logfps", "NSMBW_LOG_FPS"},
+                                            std::pair{"debug.nsmbw.profile", "NSMBW_PROFILE"},
                                             std::pair{"debug.nsmbw.patchreadback", "NSMBW_PATCH_READBACK"}}) {
                 if (const std::string value = property(prop); !value.empty()) {
                     setenv(env, value.c_str(), 1);
@@ -1605,6 +1607,25 @@ int RuntimeMain(int argc, char** argv) {
                   << " native=" << auroraInfo.windowSize.native_fb_width << "x"
                   << auroraInfo.windowSize.native_fb_height << std::endl;
         g_auroraInitialized.store(true, std::memory_order_release);
+
+        // From here on this thread runs the game, and it has 16.6 ms per frame. On a phone the
+        // scheduler is free to move it onto one of the small cores, which simply cannot finish a
+        // frame in time; asking for the fast cluster keeps it off them, and raising its priority
+        // keeps the app's own background work from taking the core out from under it. Does nothing
+        // where every core is the same.
+        //
+        // This happens here rather than at startup for a reason worth keeping: a thread inherits
+        // the affinity of the thread that created it. Asking before aurora started would have
+        // handed the same restriction to the render thread, the shader compilers and the audio
+        // mixer, which would then be fighting the game for the very four cores the frame needs
+        // while the other four sat idle. Everything aurora owns is already running by now, so only
+        // the game thread - and the guest threads it goes on to create - are restricted.
+        if (RuntimePlatform::PreferPerformanceCores()) {
+            RT_LOG(RT_TAG_RUNTIME) << "game thread restricted to the performance cores" << std::endl;
+        }
+        if (RuntimePlatform::RaiseThreadPriority()) {
+            RT_LOG(RT_TAG_RUNTIME) << "game thread raised above ordinary application threads" << std::endl;
+        }
 
         auto entry = ResolveEntry();
         InitializePersistentCpuContext();

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The PC launcher's colours, so both look like the same program: dark purple with Wario's gold.
+     Ported from launcher-avalonia/UI/Theme.cs; keep the two in step. -->
+<resources>
+    <color name="wario_back">#FF180E22</color>
+    <color name="wario_side">#FF100918</color>
+    <color name="wario_side_hover">#FF261636</color>
+    <color name="wario_field">#FF2C1C3E</color>
+    <color name="wario_field_border">#FF543870</color>
+    <color name="wario_gold">#FFF6C426</color>
+    <color name="wario_gold_dark">#FFC49212</color>
+    <color name="wario_purple">#FF7634AA</color>
+    <color name="wario_text">#FFF0EAF8</color>
+    <color name="wario_muted">#FFA092B6</color>
+    <color name="wario_bad">#FFF06060</color>
+    <color name="wario_good">#FF78D678</color>
+    <color name="wario_dark_text">#FF28103C</color>
+    <color name="wario_log_back">#FF0C0812</color>
+    <color name="wario_disabled">#FF5A4E6C</color>
+
+    <color name="ic_launcher_background">#FFF2B233</color>
+</resources>

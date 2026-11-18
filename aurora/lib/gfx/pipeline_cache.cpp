@@ -64,8 +64,18 @@ static size_t g_pipelinesPerFrame = 0;
 constexpr size_t MaxQueuedPipelineBuilds = 256;
 // First-use compilation works best as a short parallel burst. Leave two logical processors for the
 // render and game threads, and cap large hosts to limit driver submissions and memory use.
+#if defined(__ANDROID__)
+// A phone's cores are not interchangeable: half of them are small, slow ones. hardware_concurrency
+// counts all eight of a typical big.LITTLE part, so the desktop sizing below would start six
+// compilers that the scheduler is free to run on the same big cores as the game, which is the one
+// thread that must not miss a 16.6 ms deadline. Compilation is a background chore here; the game
+// is not.
+constexpr size_t ReservedLogicalProcessors = 4;
+constexpr size_t MaxPipelineWorkers = 2;
+#else
 constexpr size_t ReservedLogicalProcessors = 2;
 constexpr size_t MaxPipelineWorkers = 22;
+#endif
 // Cached clear and GX pipelines are prewarmed using the full worker pool.
 constexpr size_t MaxBackgroundPipelineWorkers = MaxPipelineWorkers;
 // For synchronous pipeline fallback (OpenGL)
