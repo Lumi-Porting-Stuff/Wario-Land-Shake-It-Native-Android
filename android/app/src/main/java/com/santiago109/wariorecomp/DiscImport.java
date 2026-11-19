@@ -85,10 +85,13 @@ final class DiscImport {
         if (problem != null) {
             return problem;
         }
+        // Not a failure of the import: the disc is in place by now, and the launcher records the
+        // folder again every time PLAY is pressed (LauncherActivity.play), where a Config.toml
+        // that really cannot be written is reported for what it is.
         try {
             GameData.writeDvdRoot(context, target);
         } catch (IOException e) {
-            return "The game folder could not be saved: " + e.getMessage();
+            android.util.Log.w("WarioRecomp", "could not record the game folder yet", e);
         }
         return null;
     }

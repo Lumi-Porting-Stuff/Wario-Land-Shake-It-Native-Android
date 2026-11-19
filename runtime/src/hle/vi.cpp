@@ -790,6 +790,23 @@ uint32_t s_lastPacedRetraceCount = ~0u;
 // comment at the stamping site). Producer-thread only, like the memo above.
 uint64_t s_lastPresentAnchorNanos = 0;
 
+// The frame just presented had already missed its retrace, so the next wait for one returns at
+// once instead of standing in line for the following boundary.
+//
+// This is what the difference between 30 and 40 fps is made of. Retraces arrive on a 16.6 ms grid,
+// and VIWaitForRetrace returns on the next one after it is called. A frame that takes 25 ms has
+// therefore already let one pass while it was being drawn, and waiting for the next rounds it up
+// to 33.3 ms - two whole retraces for a frame that needed one and a half. Rounding every late
+// frame up to the next boundary is what pins a struggling scene to exactly half rate.
+//
+// The game advances its logic once per frame it produces, so this is not only about smoothness:
+// at 30 fps it is running at half speed, and the player sees slow motion. Releasing the frame when
+// it is actually ready puts both the frame rate and the game's speed closer to right.
+//
+// Set only by the present path and only for a frame that was genuinely late, so a caller that
+// waits for a retrace without having presented anything behaves exactly as it did before.
+bool s_lateFrameAwaitingRelease = false;
+
 // Sleeps to the same VI retrace boundary VIWaitForRetrace targets, servicing alarms every 1 ms so audio
 // DMA and timers keep running, then delivers that retrace so guest logic starts exactly on the grid.
 void PaceToRetraceBoundary(Clock::time_point deadline) {
@@ -924,6 +941,16 @@ void VI_HLE_PresentFrame(bool presentedXfb, bool paceToRetrace) {
         const uint32_t retracesElapsed = retraceCount - s_lastPacedRetraceCount;
         paceThisFrame = retracesElapsed == 0;
         s_lastPacedRetraceCount = retraceCount;
+        // The present path free-runs a late frame, but the guest then queues for the next retrace
+        // anyway and the round-up happens there instead. Tell that wait what this frame already
+        // knows. Deterministic mode is excluded: every device in a session has to consume the same
+        // retraces in the same order, so there the frame rate gives way to staying in step.
+        // Two or more, not one: a single retrace per produced frame IS the healthy locked-60
+        // cadence (see the note just below on what this count means). Treating one as late marks
+        // every good frame late and takes the pacing apart in the scenes that were already fine.
+        if (retracesElapsed >= 2 && !DetClock::Enabled()) {
+            s_lateFrameAwaitingRelease = true;
+        }
         // aurora_report_producer_paced needs a different signal than the pace-wait above: the guest
         // self-paces via VIWaitForRetrace, so one retrace per produced frame is the healthy locked-60
         // cadence, and zero only happens when production outruns VI. "Kept up" means <=1 retrace
@@ -1411,6 +1438,17 @@ extern "C" void VIWaitForRetrace_HLE_801b99ec(CpuContext* ctx)
             std::lock_guard<std::mutex> lock(g_viMutex);
             EnsureInitializedLocked();
             retraceCount = g_vi.retraceCount;
+            // The frame this wait follows already overran its retrace (see where the flag is set).
+            // Standing in line for the next boundary would charge it a second whole retrace for an
+            // overrun of a fraction of one, which is what holds a heavy scene at exactly half rate.
+            // The grid is re-phased to now, so the frames after this one are measured from when
+            // the game actually got going rather than from a boundary it never saw.
+            if (s_lateFrameAwaitingRelease) {
+                s_lateFrameAwaitingRelease = false;
+                g_vi.lastRetrace = Clock::now();
+                OS__RestoreInterrupts_801a65d4(irqState);
+                return;
+            }
         }
 
         do {

@@ -12,3 +12,6 @@ app/src/main/assets/runtime/
 # always show the same artwork and icon from one source.
 app/src/main/assets/launcher_banner.jpg
 app/src/main/res/mipmap-xxxhdpi/ic_launcher_art.png
+
+# Cargo output for the disc extractor (android\discextract), built by tools\build-wario-android.ps1.
+discextract/target/

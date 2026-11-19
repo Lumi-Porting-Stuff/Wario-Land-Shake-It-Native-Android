@@ -111,7 +111,56 @@ final class GameData {
      * folder otherwise. Either way the engine can open it afterwards.
      */
     static File importTarget(Context context) {
-        return hasSharedAccess(context) ? sharedRoot() : privateRoot(context);
+        // Being allowed to read shared storage is not being able to write it: Android 10 grants
+        // the read permission alone, and some ROMs report all-files access while still refusing
+        // writes. So the shared folder is tried rather than assumed, and the app's own folder,
+        // which needs no permission, takes over when it cannot be written.
+        if (hasSharedAccess(context) && isWritable(sharedRoot())) {
+            return sharedRoot();
+        }
+        return privateRoot(context);
+    }
+
+    /** True when a file can actually be created in {@code directory}, creating it if need be. */
+    private static boolean isWritable(File directory) {
+        if (!directory.isDirectory() && !directory.mkdirs()) {
+            return false;
+        }
+        File probe = new File(directory, ".write-test");
+        try (OutputStream output = new java.io.FileOutputStream(probe)) {
+            output.write(0);
+            return true;
+        } catch (IOException e) {
+            return false;
+        } finally {
+            probe.delete();
+        }
+    }
+
+    /**
+     * Replaces {@code file} with {@code bytes} through a temporary file and a rename.
+     *
+     * <p>Opening the file itself for writing fails with "Permission denied" when it belongs to
+     * somebody else - a Config.toml pushed with adb, or left by an earlier install - even though
+     * the folder is this app's. Renaming over it only needs the folder, and it also means a write
+     * that is interrupted cannot leave half a file behind.
+     */
+    static void replaceFile(File file, byte[] bytes) throws IOException {
+        File temp = new File(file.getParentFile(), file.getName() + ".tmp");
+        try {
+            try (OutputStream output = new java.io.FileOutputStream(temp)) {
+                output.write(bytes);
+            }
+            if (temp.renameTo(file)) {
+                return;
+            }
+        } catch (IOException e) {
+            // The folder refused a new file; the file itself may still accept a write.
+        }
+        temp.delete();
+        try (OutputStream output = new java.io.FileOutputStream(file)) {
+            output.write(bytes);
+        }
     }
 
     /**
@@ -218,9 +267,7 @@ final class GameData {
         for (String line : lines) {
             text.append(line).append('\n');
         }
-        try (OutputStream output = new java.io.FileOutputStream(config)) {
-            output.write(text.toString().getBytes(StandardCharsets.UTF_8));
-        }
+        replaceFile(config, text.toString().getBytes(StandardCharsets.UTF_8));
     }
 
     /** TOML basic strings take backslash escapes, so a path's own backslashes must be doubled. */

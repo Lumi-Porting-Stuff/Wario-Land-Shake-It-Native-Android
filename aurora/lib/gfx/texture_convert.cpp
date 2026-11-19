@@ -3,6 +3,7 @@
 #include "../internal.hpp"
 #include "../gx/gx_fmt.hpp"
 
+#include <cstring>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -698,15 +699,23 @@ ConvertedTexture convert_texture_palette(u32 textureFormat, uint32_t width, uint
   size_t offset = 0;
   for (u32 mip = 0; mip < mips; ++mip) {
     const size_t pixelCount = static_cast<size_t>(width) * height;
+    // The buffer is grown once per mip and written through a plain pointer, rather than appended
+    // to a pixel at a time. Appending re-checked the capacity and called into memcpy for four
+    // bytes on every pixel of every palette texture the game loads, which on a phone measured as
+    // the largest single cost inside the texture path - all of it bookkeeping, none of it the
+    // conversion. The loop below does what it always did: look the index up, or transparent black
+    // when it points outside the palette.
+    const size_t start = pixels.size();
+    pixels.append_uninitialized(pixelCount * 4);
+    uint8_t* out = pixels.data() + start;
+    const uint8_t* lut = palette.data.data();
     for (size_t i = 0; i < pixelCount; ++i) {
       const u32 index = indexData[offset + i];
       if (index >= tlutEntries) {
-        constexpr uint8_t transparent[4] = {0, 0, 0, 0};
-        pixels.append(transparent, sizeof(transparent));
+        std::memset(out + i * 4, 0, 4);
         continue;
       }
-      const size_t src = static_cast<size_t>(index) * 4;
-      pixels.append(palette.data.data() + src, 4);
+      std::memcpy(out + i * 4, lut + static_cast<size_t>(index) * 4, 4);
     }
     offset += pixelCount;
     width = std::max(width >> 1, 1u);

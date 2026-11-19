@@ -655,7 +655,8 @@ gfx::TextureHandle resolve_static_texture(const GXTexObj_& obj) {
   if (canCacheUpload) {
     store_cached_texture(obj, handle);
     if (canUseSourceCache) {
-      if (s_staticTextureSourceCache.size() >= 512) {
+      // Raised with the palette cache beside it, and for the same reason; see the note there.
+      if (s_staticTextureSourceCache.size() >= 1024) {
         absl::erase_if(s_staticTextureSourceCache, [](const auto& item) { return item.second.handle.use_count() <= 1; });
         clear_static_source_front_cache();
       }
@@ -724,7 +725,13 @@ gfx::TextureHandle resolve_static_palette_texture(const GXTexObj_& obj, const GX
   if (!obj.no_cache() && !tlut.no_cache()) {
     store_cached_texture(obj, handle, tlut.tlutObjId, tlut.tlutDataVersion);
     if (canUseSourceCache) {
-      if (s_staticPaletteTextureSourceCache.size() >= 256) {
+      // 1024, not the 256 this began with. Eviction here is not a replacement policy: it drops
+      // every entry nothing is currently holding, so a cache that fills is a cache that empties,
+      // and the textures come back through the driver one creation at a time. A phone measured 30%
+      // of its texture builds missing both this and the recycling pool in a busy scene, which is a
+      // cross-process call to the compression service for each one. Entries are handles, so the
+      // cost of the larger ceiling is the textures themselves staying alive - which is the point.
+      if (s_staticPaletteTextureSourceCache.size() >= 1024) {
         absl::erase_if(s_staticPaletteTextureSourceCache, [](const auto& item) { return item.second.handle.use_count() <= 1; });
       }
       s_staticPaletteTextureSourceCache[sourceKey] = make_static_palette_texture_source_entry(sourceKey, handle);

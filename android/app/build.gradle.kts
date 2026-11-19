@@ -2,6 +2,9 @@ plugins {
     id("com.android.application")
 }
 
+// One place for the version: defaultConfig below and the release file's name both read it.
+val warioVersion = "0.4.0"
+
 // SDL3's activity classes come from the SDL3 source tree the native build already fetched, rather
 // than a copy checked in here (see gradle.properties). Without it the app has no SDLActivity to
 // extend, so the build stops with a readable message instead of a missing-symbol error.
@@ -27,8 +30,8 @@ android {
         // which is what the engine itself is compiled against.
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.3.1"
+        versionCode = 2
+        versionName = warioVersion
 
         ndk {
             // The runtime's CMake only accepts arm64-v8a (runtime/CMakeLists.txt).
@@ -47,6 +50,7 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
 
     // SDL3's activity classes join this module's own sources. The engine and the runtime assets sit
     // in the default jniLibs and assets folders, which tools/build-wario-android.ps1 fills.
@@ -99,4 +103,17 @@ tasks.register("checkNativeBuild") {
 
 tasks.matching { it.name.startsWith("compile") && it.name.contains("JavaWithJavac") }.configureEach {
     dependsOn("checkNativeBuild")
+}
+
+// The release file is named for what it is. It leaves this folder and ends up in a download or a
+// chat, where "app-release.apk" says nothing about which build somebody is holding and two of them
+// are indistinguishable. AGP 8 removed the old applicationVariants hook, so this is the variant
+// API that replaced it.
+androidComponents {
+    onVariants { variant ->
+        variant.outputs.forEach { output ->
+            (output as com.android.build.api.variant.impl.VariantOutputImpl).outputFileName.set(
+                "WarioRecomp-$warioVersion-arm64-v8a-${variant.buildType}.apk")
+        }
+    }
 }

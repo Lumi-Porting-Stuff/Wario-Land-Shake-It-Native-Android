@@ -155,9 +155,12 @@
     <string name="grant_access">Grant all-files access…</string>
     <string name="extracting">Extracting the disc</string>
     <string name="data_extract_help">You need Wario Land: Shake It! (USA, RWLE01, revision 0).
-        Extract it once with Dolphin on a PC: right-click the game, Properties, the Filesystem tab,
-        then right-click the disc at the top and choose Extract Entire Disc. Copy the resulting
-        folder to the path above — about 3.5 GB.</string>
+        Pick the disc image below (.iso, .wbfs, .rvz, .wia, .gcz or .ciso) and the app extracts it
+        here — about 3.5 GB, and the image itself is read where it is, not copied. You can also
+        extract it on a PC with Dolphin (Properties, Filesystem, right-click the disc, Extract
+        Entire Disc) and copy the folder to the path above.</string>
+    <string name="extract_button">Extract a disc image</string>
+    <string name="extract_reading">Reading the disc…</string>
     <string name="importing">Importing instead</string>
     <!-- %1$s is the app's private game folder. -->
     <string name="data_import_help">If you would rather pick the folder here, it is copied into

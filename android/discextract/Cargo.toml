@@ -1,0 +1,31 @@
+# The disc extractor the Android launcher calls.
+#
+# A phone cannot run nodtool the way the PC launcher does - that is a desktop executable the
+# launcher downloads - so the same library it is built on is linked into the app instead, behind a
+# single JNI entry point. Formats, decryption and verification are nod's; everything here is the
+# walk from a disc to the files/ and sys/ folders the engine reads, plus the glue to report
+# progress to the Java side.
+[package]
+name = "discextract"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+# cdylib: the app loads this as libdiscextract.so and finds the JNI symbol in it. No C++ shim.
+crate-type = ["cdylib"]
+
+[dependencies]
+# Keep in step with AURORA_NOD_VERSION in aurora/CMakeLists.txt, so the phone and the PC launcher
+# accept the same images and read them the same way.
+nod = "=2.0.0-alpha.9"
+jni = "0.21"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+# Abort rather than unwind: a panic crossing the JNI boundary is undefined behaviour, and the
+# entry point catches panics explicitly so this is only the backstop.
+panic = "abort"
+strip = true

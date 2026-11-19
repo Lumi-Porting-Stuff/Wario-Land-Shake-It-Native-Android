@@ -114,7 +114,8 @@ if (-not $cmake) { throw 'cmake not found: install the SDK Manager''s "CMake" pa
 if (-not $ninja -or -not (Test-Path -LiteralPath $ninja)) {
     throw 'ninja not found: install the SDK Manager''s "CMake" package (it ships one).'
 }
-$strip = Join-Path $Ndk 'toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-strip.exe'
+$toolchainBin = Join-Path $Ndk 'toolchains\llvm\prebuilt\windows-x86_64\bin'
+$strip = Join-Path $toolchainBin 'llvm-strip.exe'
 Set-Status "NDK: $Ndk"
 
 # ── 2. The game ─────────────────────────────────────────────────────────────────────────────────
@@ -218,6 +219,40 @@ if (Test-Path -LiteralPath $strip) {
 }
 $megabytes = [Math]::Round((Get-Item -LiteralPath $staged).Length / 1MB, 1)
 Set-Status "engine: $staged ($megabytes MB)"
+
+# ── 5b. The disc extractor ──────────────────────────────────────────────────────────────────────
+# The launcher turns a disc image into the folder the engine reads, using the same library the PC
+# launcher's nodtool is built on (android\discextract). It is Rust, and it is a separate .so rather
+# than part of the engine: it has nothing to do with running the game, and the engine's own build
+# has no reason to grow a Rust toolchain dependency.
+#
+# Skipped, not fatal, when Rust is missing: the app still imports a folder somebody else extracted,
+# which is how it worked before this existed. Only the extract button goes away.
+$cargo = (Get-Command cargo -ErrorAction SilentlyContinue).Source
+$extractDir = Join-Path $app 'discextract'
+$extractStaged = Join-Path $jniLibs 'libdiscextract.so'
+if (-not $cargo) {
+    Set-Status 'disc extractor: skipped (cargo not found; install Rust to build it)'
+    if (Test-Path -LiteralPath $extractStaged) { Remove-Item -LiteralPath $extractStaged -Force }
+} else {
+    # The NDK's clang drives the link, and the C dependencies (zstd, lzma, bzip2, zlib) compile
+    # against the same sysroot the engine uses. The .cmd wrappers are what the NDK ships on Windows.
+    $clang = Join-Path $toolchainBin "aarch64-linux-android$MinSdk-clang.cmd"
+    if (-not (Test-Path -LiteralPath $clang)) {
+        throw "The NDK has no compiler for API ${MinSdk}: $clang"
+    }
+    $env:CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER = $clang
+    $env:CC_aarch64_linux_android = $clang
+    $env:AR_aarch64_linux_android = Join-Path $toolchainBin 'llvm-ar.exe'
+    Invoke-Step 'extractor-android' $cargo @(
+        'build', '--manifest-path', (Join-Path $extractDir 'Cargo.toml'),
+        '--target', 'aarch64-linux-android', '--release') $root
+    $built = Join-Path $extractDir 'target\aarch64-linux-android\release\libdiscextract.so'
+    if (-not (Test-Path -LiteralPath $built)) { throw "The disc extractor was not produced: $built" }
+    Copy-Item -LiteralPath $built -Destination $extractStaged -Force
+    $extractKb = [Math]::Round((Get-Item -LiteralPath $extractStaged).Length / 1KB)
+    Set-Status "disc extractor: $extractStaged ($extractKb KB)"
+}
 
 # The files a desktop build keeps beside its executable, in the layout the engine looks for them in
 # (runtime/src/platform/host_platform.cpp and RuntimeFiles.java).

@@ -68,9 +68,7 @@ final class Config {
         for (String line : lines) {
             text.append(line).append('\n');
         }
-        try (OutputStream output = new FileOutputStream(file)) {
-            output.write(text.toString().getBytes(StandardCharsets.UTF_8));
-        }
+        GameData.replaceFile(file, text.toString().getBytes(StandardCharsets.UTF_8));
     }
 
     // ── Lines ───────────────────────────────────────────────────────────────────────────────────

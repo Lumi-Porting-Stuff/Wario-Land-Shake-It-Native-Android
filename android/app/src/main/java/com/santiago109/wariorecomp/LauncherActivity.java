@@ -42,6 +42,7 @@ public class LauncherActivity extends AppCompatActivity {
 
     private static final int REQUEST_PICK_FOLDER = 1;
     private static final int REQUEST_READ_STORAGE = 2;
+    private static final int REQUEST_PICK_IMAGE = 3;
 
     /** The pages, in the PC launcher's order. */
     private enum Tab {
@@ -72,6 +73,7 @@ public class LauncherActivity extends AppCompatActivity {
     private TextView summary;
 
     private DiscImport currentImport;
+    private DiscExtract currentExtract;
     private Thread importThread;
     private ProgressBar importProgress;
     private TextView importStatus;
@@ -101,6 +103,10 @@ public class LauncherActivity extends AppCompatActivity {
         // The copy holds an open descriptor on a folder the user may be about to revoke.
         if (currentImport != null) {
             currentImport.cancel();
+        }
+        // And the extraction holds one on the image itself, for the same reason.
+        if (currentExtract != null) {
+            currentExtract.cancel();
         }
         super.onDestroy();
     }
@@ -552,6 +558,8 @@ public class LauncherActivity extends AppCompatActivity {
 
         page.section(getString(R.string.extracting));
         page.info(getString(R.string.data_extract_help), R.color.wario_muted);
+        page.buttons(new String[]{getString(R.string.extract_button)},
+                new Runnable[]{this::pickImage});
 
         page.section(getString(R.string.importing));
         page.info(getString(R.string.data_import_help,
@@ -689,14 +697,68 @@ public class LauncherActivity extends AppCompatActivity {
         startActivityForResult(intent, REQUEST_PICK_FOLDER);
     }
 
+    /**
+     * The disc image itself, which {@link DiscExtract} reads where it lies.
+     *
+     * <p>Asks for every type rather than a list: a .iso or .rvz has no registered MIME type, and
+     * providers that guess one disagree with each other. A file that is not a disc image fails in
+     * the extractor with something to read, which is better than being unselectable for reasons
+     * the player cannot see.
+     */
+    private void pickImage() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivityForResult(intent, REQUEST_PICK_IMAGE);
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != REQUEST_PICK_FOLDER || resultCode != RESULT_OK || data == null
-                || data.getData() == null) {
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) {
             return;
         }
-        startImport(data.getData());
+        if (requestCode == REQUEST_PICK_FOLDER) {
+            startImport(data.getData());
+        } else if (requestCode == REQUEST_PICK_IMAGE) {
+            startExtract(data.getData());
+        }
+    }
+
+    private void startExtract(Uri image) {
+        if (importProgress == null || importStatus == null) {
+            return;
+        }
+        importProgress.setVisibility(View.VISIBLE);
+        importProgress.setIndeterminate(true);
+        importStatus.setVisibility(View.VISIBLE);
+        importStatus.setText(R.string.extract_reading);
+
+        DiscExtract extractor = new DiscExtract(this);
+        currentExtract = extractor;
+        importThread = new Thread(() -> {
+            String problem = extractor.run(image, new DiscExtract.Listener() {
+                @Override
+                public void onProgress(long done, long total, String file) {
+                    showImportProgress(done, total, file);
+                }
+
+                @Override
+                public boolean isCancelled() {
+                    return extractor.wasCancelled();
+                }
+            });
+            runOnUiThread(() -> {
+                importThread = null;
+                currentExtract = null;
+                showTab(Tab.DATA);
+                if (problem != null) {
+                    report(problem);
+                }
+            });
+        }, "disc-extract");
+        importThread.start();
     }
 
     private void startImport(Uri tree) {
@@ -715,10 +777,10 @@ public class LauncherActivity extends AppCompatActivity {
             runOnUiThread(() -> {
                 importThread = null;
                 currentImport = null;
-                if (problem != null) {
-                    toast(problem);
-                }
                 showTab(Tab.DATA);
+                if (problem != null) {
+                    report(problem);
+                }
             });
         }, "disc-import");
         importThread.start();
@@ -740,6 +802,21 @@ public class LauncherActivity extends AppCompatActivity {
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * A failure the player has to be able to read. A toast shows two lines and is gone in a few
+     * seconds, which cuts a path and its reason down to the part that says nothing.
+     */
+    private void report(String message) {
+        android.util.Log.e("WarioRecomp", message);
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setMessage(message)
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
+    }
 
     private void toast(String message) {
         android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show();
